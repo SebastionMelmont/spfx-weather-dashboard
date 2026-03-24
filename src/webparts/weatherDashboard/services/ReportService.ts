@@ -10,10 +10,12 @@ import { formatNZDateTime, getUVLabel } from '../helpers/formatHelper';
 export class ReportService {
   private spHttpClient: SPHttpClient;
   private siteUrl: string;
+  private siteServerRelativeUrl: string;
 
-  constructor(spHttpClient: SPHttpClient, siteUrl: string) {
+  constructor(spHttpClient: SPHttpClient, siteUrl: string, siteServerRelativeUrl: string) {
     this.spHttpClient = spHttpClient;
     this.siteUrl = siteUrl;
+    this.siteServerRelativeUrl = siteServerRelativeUrl;
   }
 
   /**
@@ -92,12 +94,16 @@ export class ReportService {
       .replace(/[^a-zA-Z0-9_]/g, '');
     const fileName = `WeatherReport_${cityNames}_${timestamp}.txt`;
 
+    // Build the server-relative path to the library
+    const serverRelativeFolderUrl = `${this.siteServerRelativeUrl}/${libraryName}`;
+
     // Ensure the document library folder exists
-    await this.ensureFolder(libraryName);
+    await this.ensureFolder(serverRelativeFolderUrl);
 
     // Upload file to the library
+    const encodedFolderUrl = encodeURIComponent(serverRelativeFolderUrl);
     const uploadUrl =
-      `${this.siteUrl}/_api/web/getfolderbyserverrelativeurl('${libraryName}')/files/add(overwrite=true,url='${fileName}')`;
+      `${this.siteUrl}/_api/web/getfolderbyserverrelativeurl('${encodedFolderUrl}')/files/add(overwrite=true,url='${fileName}')`;
 
     try {
       const response: SPHttpClientResponse = await this.spHttpClient.post(
@@ -129,9 +135,10 @@ export class ReportService {
    * Ensure a folder/library exists at the site level.
    * @param folderName - The folder or library name
    */
-  private async ensureFolder(folderName: string): Promise<void> {
+  private async ensureFolder(serverRelativeFolderUrl: string): Promise<void> {
+    const encodedUrl = encodeURIComponent(serverRelativeFolderUrl);
     const checkUrl =
-      `${this.siteUrl}/_api/web/getfolderbyserverrelativeurl('${folderName}')`;
+      `${this.siteUrl}/_api/web/getfolderbyserverrelativeurl('${encodedUrl}')`;
 
     try {
       const response = await this.spHttpClient.get(
@@ -143,13 +150,11 @@ export class ReportService {
         return; // folder exists
       }
     } catch {
-      // folder doesn't exist, continue to create
+      // folder doesn't exist, continue
     }
 
-    // If library doesn't exist, we cannot create it via REST easily.
-    // Throw a helpful error instead.
     throw new Error(
-      `Document library "${folderName}" not found. Please create a document library named "${folderName}" in your SharePoint site.`
+      `Document library not found at "${serverRelativeFolderUrl}". Please create a document library named "Weather Reports" in your SharePoint site.`
     );
   }
 }

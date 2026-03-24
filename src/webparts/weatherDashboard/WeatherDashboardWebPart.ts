@@ -11,6 +11,7 @@ import { IReadonlyTheme } from '@microsoft/sp-component-base';
 
 import WeatherDashboard from './components/WeatherDashboard';
 import { IWeatherDashboardProps } from './components/IWeatherDashboardProps';
+import { ICityResult } from './models/IWeatherData';
 
 export interface IWeatherDashboardWebPartProps {
   /** Title displayed above the dashboard */
@@ -21,6 +22,8 @@ export interface IWeatherDashboardWebPartProps {
   refreshInterval: number;
   /** SharePoint document library name for saving reports */
   reportLibrary: string;
+  /** JSON-serialized array of saved cities */
+  savedCities: string;
 }
 
 /**
@@ -42,6 +45,9 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
         httpClient: this.context.httpClient,
         spHttpClient: this.context.spHttpClient,
         siteUrl: this.context.pageContext.web.absoluteUrl,
+        siteServerRelativeUrl: this.context.pageContext.web.serverRelativeUrl,
+        savedCities: this.properties.savedCities || '[]',
+        onCitiesChanged: this.onCitiesChanged,
         isDarkTheme: this._isDarkTheme,
       }
     );
@@ -66,6 +72,10 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
 
     return Promise.resolve();
   }
+
+  private onCitiesChanged = (cities: ICityResult[]): void => {
+    this.properties.savedCities = JSON.stringify(cities);
+  };
 
   protected onThemeChanged(currentTheme: IReadonlyTheme | undefined): void {
     if (!currentTheme) {

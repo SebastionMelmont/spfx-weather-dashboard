@@ -33,7 +33,7 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     super(props);
 
     this.weatherService = new WeatherService(props.httpClient);
-    this.reportService = new ReportService(props.spHttpClient, props.siteUrl);
+    this.reportService = new ReportService(props.spHttpClient, props.siteUrl, props.siteServerRelativeUrl);
 
     this.state = {
       cities: [],
@@ -44,10 +44,8 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   }
 
   public componentDidMount(): void {
-    // Load default city if configured
-    if (this.props.defaultCity) {
-      this.loadDefaultCity(this.props.defaultCity).catch(() => { /* handled internally */ });
-    }
+    // Restore saved cities, or fall back to default city
+    this.loadSavedCities().catch(() => { /* handled internally */ });
 
     // Set up auto-refresh
     this.setupRefreshTimer();
@@ -118,14 +116,30 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     );
   }
 
-  private async loadDefaultCity(cityName: string): Promise<void> {
+  private async loadSavedCities(): Promise<void> {
     try {
-      const results = await this.weatherService.searchCities(cityName, 1);
-      if (results.length > 0) {
-        await this.addCity(results[0]);
+      const saved: ICityResult[] = JSON.parse(this.props.savedCities || '[]');
+      if (saved.length > 0) {
+        // Restore each saved city and fetch its weather
+        for (const city of saved) {
+          await this.addCity(city, false); // don't persist during restore
+        }
+        return;
       }
-    } catch (error) {
-      console.error('Failed to load default city:', error);
+    } catch {
+      // Invalid JSON, fall through to default
+    }
+
+    // No saved cities — load the default
+    if (this.props.defaultCity) {
+      try {
+        const results = await this.weatherService.searchCities(this.props.defaultCity, 1);
+        if (results.length > 0) {
+          await this.addCity(results[0]);
+        }
+      } catch (error) {
+        console.error('Failed to load default city:', error);
+      }
     }
   }
 
@@ -143,7 +157,7 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     await this.addCity(city);
   };
 
-  private async addCity(city: ICityResult): Promise<void> {
+  private async addCity(city: ICityResult, persist: boolean = true): Promise<void> {
     const id = generateId();
     const newEntry: ICityWeather = {
       id,
@@ -156,7 +170,12 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
 
     this.setState(
       (prev) => ({ cities: [...prev.cities, newEntry] }),
-      () => this.fetchWeatherForCity(id).catch(() => { /* handled internally */ })
+      () => {
+        this.fetchWeatherForCity(id).catch(() => { /* handled internally */ });
+        if (persist) {
+          this.persistCities();
+        }
+      }
     );
   }
 
@@ -191,9 +210,12 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   }
 
   private onRemoveCity = (id: string): void => {
-    this.setState((prev) => ({
-      cities: prev.cities.filter((c) => c.id !== id),
-    }));
+    this.setState(
+      (prev) => ({
+        cities: prev.cities.filter((c) => c.id !== id),
+      }),
+      () => this.persistCities()
+    );
   };
 
   private onRefreshCity = (id: string): void => {
@@ -226,6 +248,11 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   private onDismissMessage = (): void => {
     this.setState({ message: undefined });
   };
+
+  private persistCities(): void {
+    const cityData = this.state.cities.map((c) => c.city);
+    this.props.onCitiesChanged(cityData);
+  }
 
   private setupRefreshTimer(): void {
     if (this.refreshTimer) {
