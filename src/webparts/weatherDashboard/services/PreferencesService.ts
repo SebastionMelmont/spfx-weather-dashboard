@@ -4,17 +4,12 @@ import { ICityResult } from '../models/IWeatherData';
 const LIST_TITLE = 'WeatherDashboardPrefs';
 
 /**
- * Escape a string for use inside an OData $filter expression.
- * Single quotes must be doubled — no URL encoding.
- */
-function odataEscape(value: string): string {
-  return value.replace(/'/g, "''");
-}
-
-/**
  * Service for persisting user weather city preferences in a SharePoint list.
  * Stores one item per user (keyed by user login name).
  * Works across all browsers and devices since data lives in SharePoint.
+ *
+ * Avoids OData $filter entirely — fetches all items and matches client-side
+ * to avoid encoding issues with @ and special characters in login names.
  */
 export class PreferencesService {
   private spHttpClient: SPHttpClient;
@@ -30,22 +25,23 @@ export class PreferencesService {
   ) {
     this.spHttpClient = spHttpClient;
     this.siteUrl = siteUrl;
-    // Use only user login as key so cities are shared across all pages/instances
     this.userLoginName = userLoginName;
+    console.log('[WeatherPrefs] Initialized for user:', this.userLoginName, 'site:', this.siteUrl);
   }
 
   /**
    * Load saved cities for the current user.
+   * Fetches all preference items and matches by Title client-side.
    * @returns Array of saved cities, or empty array if none found
    */
   public async loadCities(): Promise<ICityResult[]> {
     try {
       await this.ensureList();
 
-      const filterKey = odataEscape(this.userLoginName);
-      const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$filter=Title eq '${filterKey}'&$select=Title,CitiesJson&$top=1`;
+      // No $filter — fetch all items and match client-side to avoid OData encoding issues
+      const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$select=Id,Title,CitiesJson&$top=500`;
 
-      console.log('[WeatherDashboard] Loading preferences for:', this.userLoginName);
+      console.log('[WeatherPrefs] Loading all preference items...');
 
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         url,
@@ -56,26 +52,29 @@ export class PreferencesService {
       );
 
       if (!response.ok) {
-        console.error('[WeatherDashboard] Load response not OK:', response.status, response.statusText);
+        console.error('[WeatherPrefs] Load failed:', response.status, response.statusText);
         return [];
       }
 
       const data = await response.json();
-      console.log('[WeatherDashboard] Load response data:', JSON.stringify(data));
+      const items = data.value || [];
+      console.log('[WeatherPrefs] Found', items.length, 'total preference items');
 
-      if (data.value && data.value.length > 0) {
-        const citiesJson = data.value[0].CitiesJson;
-        if (citiesJson) {
-          const cities = JSON.parse(citiesJson);
-          console.log('[WeatherDashboard] Loaded', cities.length, 'saved cities');
-          return cities;
-        }
+      // Match by user login (case-insensitive)
+      const userItem = items.find(
+        (item: { Title: string }) => item.Title && item.Title.toLowerCase() === this.userLoginName.toLowerCase()
+      );
+
+      if (userItem && userItem.CitiesJson) {
+        const cities = JSON.parse(userItem.CitiesJson);
+        console.log('[WeatherPrefs] Loaded', cities.length, 'cities for user');
+        return cities;
       }
 
-      console.log('[WeatherDashboard] No saved cities found');
+      console.log('[WeatherPrefs] No saved cities for this user');
       return [];
     } catch (error) {
-      console.error('[WeatherDashboard] Failed to load preferences:', error);
+      console.error('[WeatherPrefs] Failed to load:', error);
       return [];
     }
   }
@@ -90,25 +89,28 @@ export class PreferencesService {
       await this.ensureList();
 
       const citiesJson = JSON.stringify(cities);
+      console.log('[WeatherPrefs] Saving', cities.length, 'cities...');
 
-      // Check if item exists
-      const existingId = await this.getExistingItemId();
+      // Fetch all items to find existing one (no $filter)
+      const existingItem = await this.findUserItem();
 
-      if (existingId) {
-        await this.updateItem(existingId, citiesJson);
-        console.log('[WeatherDashboard] Updated preferences, item ID:', existingId);
+      if (existingItem) {
+        await this.updateItem(existingItem.Id, citiesJson);
+        console.log('[WeatherPrefs] Updated item ID:', existingItem.Id);
       } else {
         await this.createItem(citiesJson);
-        console.log('[WeatherDashboard] Created new preferences item');
+        console.log('[WeatherPrefs] Created new preference item');
       }
     } catch (error) {
-      console.error('[WeatherDashboard] Failed to save preferences:', error);
+      console.error('[WeatherPrefs] Failed to save:', error);
     }
   }
 
-  private async getExistingItemId(): Promise<number | undefined> {
-    const filterKey = odataEscape(this.userLoginName);
-    const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$filter=Title eq '${filterKey}'&$select=Id&$top=1`;
+  /**
+   * Find the current user's preference item by fetching all and matching client-side.
+   */
+  private async findUserItem(): Promise<{ Id: number; Title: string } | undefined> {
+    const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$select=Id,Title&$top=500`;
 
     const response = await this.spHttpClient.get(
       url,
@@ -120,9 +122,11 @@ export class PreferencesService {
 
     if (response.ok) {
       const data = await response.json();
-      if (data.value && data.value.length > 0) {
-        return data.value[0].Id;
-      }
+      const items = data.value || [];
+      return items.find(
+        (item: { Id: number; Title: string }) =>
+          item.Title && item.Title.toLowerCase() === this.userLoginName.toLowerCase()
+      );
     }
 
     return undefined;
@@ -148,7 +152,7 @@ export class PreferencesService {
 
     if (!response.ok) {
       const text = await response.text();
-      console.error('[WeatherDashboard] Create item failed:', response.status, text);
+      console.error('[WeatherPrefs] Create failed:', response.status, text);
     }
   }
 
@@ -173,13 +177,12 @@ export class PreferencesService {
 
     if (!response.ok) {
       const text = await response.text();
-      console.error('[WeatherDashboard] Update item failed:', response.status, text);
+      console.error('[WeatherPrefs] Update failed:', response.status, text);
     }
   }
 
   /**
-   * Ensure the preferences list exists, creating it with the CitiesJson field if needed.
-   * List is NOT hidden so admins can inspect/debug it.
+   * Ensure the preferences list exists with the CitiesJson field.
    */
   private async ensureList(): Promise<void> {
     if (this.listEnsured) return;
@@ -196,19 +199,17 @@ export class PreferencesService {
       );
 
       if (response.ok) {
-        // List exists — also check that CitiesJson field exists
         await this.ensureField();
         this.listEnsured = true;
-        console.log('[WeatherDashboard] Preferences list verified');
+        console.log('[WeatherPrefs] List verified');
         return;
       }
     } catch {
-      // List doesn't exist, create it below
+      // List doesn't exist
     }
 
-    console.log('[WeatherDashboard] Creating preferences list...');
+    console.log('[WeatherPrefs] Creating list...');
 
-    // Create the list (visible, not hidden)
     const createListUrl = `${this.siteUrl}/_api/web/lists`;
     const createResponse = await this.spHttpClient.post(
       createListUrl,
@@ -220,7 +221,7 @@ export class PreferencesService {
         },
         body: JSON.stringify({
           Title: LIST_TITLE,
-          Description: 'Weather Dashboard user preferences — stores saved cities per user',
+          Description: 'Weather Dashboard user preferences',
           BaseTemplate: 100,
           Hidden: false,
         }),
@@ -229,14 +230,13 @@ export class PreferencesService {
 
     if (!createResponse.ok) {
       const text = await createResponse.text();
-      console.error('[WeatherDashboard] Failed to create preferences list:', createResponse.status, text);
+      console.error('[WeatherPrefs] List creation failed:', createResponse.status, text);
       return;
     }
 
-    // Add the CitiesJson field
     await this.addCitiesJsonField();
     this.listEnsured = true;
-    console.log('[WeatherDashboard] Preferences list created successfully');
+    console.log('[WeatherPrefs] List created');
   }
 
   private async ensureField(): Promise<void> {
@@ -254,14 +254,14 @@ export class PreferencesService {
       if (response.ok) {
         const data = await response.json();
         if (data.value && data.value.length > 0) {
-          return; // Field exists
+          return;
         }
       }
     } catch {
-      // Field doesn't exist
+      // Field check failed
     }
 
-    console.log('[WeatherDashboard] Adding CitiesJson field...');
+    console.log('[WeatherPrefs] Adding CitiesJson field...');
     await this.addCitiesJsonField();
   }
 
@@ -277,7 +277,7 @@ export class PreferencesService {
         },
         body: JSON.stringify({
           Title: 'CitiesJson',
-          FieldTypeKind: 3, // Multi-line text
+          FieldTypeKind: 3,
           Required: false,
         }),
       }
@@ -285,7 +285,7 @@ export class PreferencesService {
 
     if (!response.ok) {
       const text = await response.text();
-      console.error('[WeatherDashboard] Failed to add CitiesJson field:', response.status, text);
+      console.error('[WeatherPrefs] Field creation failed:', response.status, text);
     }
   }
 }
