@@ -1,4 +1,4 @@
-import { HttpClient } from '@microsoft/sp-http';
+import { HttpClient, SPHttpClient } from '@microsoft/sp-http';
 
 export interface IWeatherDashboardProps {
   /** Web part title displayed above the dashboard */
@@ -9,8 +9,14 @@ export interface IWeatherDashboardProps {
   refreshInterval: number;
   /** SPFx HttpClient for external API calls */
   httpClient: HttpClient;
-  /** Unique instance ID for localStorage key */
+  /** SPFx SPHttpClient for SharePoint API calls */
+  spHttpClient: SPHttpClient;
+  /** Current SharePoint site absolute URL */
+  siteUrl: string;
+  /** Unique web part instance ID */
   instanceId: string;
+  /** Current user login name */
+  userLoginName: string;
   /** Whether the current theme is dark */
   isDarkTheme: boolean;
 }

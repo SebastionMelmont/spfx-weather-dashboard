@@ -7,6 +7,7 @@ import styles from './WeatherDashboard.module.scss';
 import type { IWeatherDashboardProps } from './IWeatherDashboardProps';
 import { ICityResult, ICityWeather } from '../models/IWeatherData';
 import { WeatherService } from '../services/WeatherService';
+import { PreferencesService } from '../services/PreferencesService';
 import { generateId } from '../helpers/formatHelper';
 import CitySearch from './CitySearch/CitySearch';
 import WeatherCard from './WeatherCard/WeatherCard';
@@ -19,18 +20,25 @@ interface IWeatherDashboardState {
 
 /**
  * Main Weather Dashboard component.
- * Manages multiple city weather cards with search, refresh, and localStorage persistence.
+ * Manages multiple city weather cards with search, refresh, and
+ * cross-browser persistence via a SharePoint list.
  */
 export default class WeatherDashboard extends React.Component<IWeatherDashboardProps, IWeatherDashboardState> {
   private weatherService: WeatherService;
+  private preferencesService: PreferencesService;
   private refreshTimer: ReturnType<typeof setInterval> | undefined = undefined;
-  private storageKey: string;
+  private saveTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
 
   constructor(props: IWeatherDashboardProps) {
     super(props);
 
     this.weatherService = new WeatherService(props.httpClient);
-    this.storageKey = `weatherDashboard_cities_${props.instanceId}`;
+    this.preferencesService = new PreferencesService(
+      props.spHttpClient,
+      props.siteUrl,
+      props.instanceId,
+      props.userLoginName
+    );
 
     this.state = {
       cities: [],
@@ -53,6 +61,9 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   public componentWillUnmount(): void {
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
+    }
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
     }
   }
 
@@ -102,20 +113,17 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   }
 
   private async loadSavedCities(): Promise<void> {
-    // Try loading from localStorage
+    // Try loading from SharePoint preferences list
     try {
-      const stored = localStorage.getItem(this.storageKey);
-      if (stored) {
-        const saved: ICityResult[] = JSON.parse(stored);
-        if (Array.isArray(saved) && saved.length > 0) {
-          for (const city of saved) {
-            await this.addCity(city, false);
-          }
-          return;
+      const saved = await this.preferencesService.loadCities();
+      if (saved.length > 0) {
+        for (const city of saved) {
+          await this.addCity(city, false);
         }
+        return;
       }
     } catch {
-      // Invalid data, fall through to default
+      // Fall through to default
     }
 
     // No saved cities — load the default
@@ -161,7 +169,7 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
         () => {
           this.fetchWeatherForCity(id).catch(() => { /* handled internally */ });
           if (persist) {
-            this.saveCitiesToStorage();
+            this.debouncedSave();
           }
           resolve();
         }
@@ -202,7 +210,7 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   private onRemoveCity = (id: string): void => {
     this.setState(
       (prev) => ({ cities: prev.cities.filter((c) => c.id !== id) }),
-      () => this.saveCitiesToStorage()
+      () => this.debouncedSave()
     );
   };
 
@@ -218,14 +226,20 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     this.setState({ message: undefined });
   };
 
-  private saveCitiesToStorage(): void {
-    try {
-      const cityData = this.state.cities.map((c) => c.city);
-      localStorage.setItem(this.storageKey, JSON.stringify(cityData));
-    } catch {
-      // localStorage might be full or unavailable
-      console.error('Failed to save cities to localStorage');
+  /**
+   * Debounced save — waits 500ms after the last change before saving to SharePoint.
+   * Prevents rapid API calls when adding multiple cities quickly.
+   */
+  private debouncedSave(): void {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
     }
+    this.saveTimeout = setTimeout(() => {
+      const cityData = this.state.cities.map((c) => c.city);
+      this.preferencesService.saveCities(cityData).catch(() => {
+        console.error('Failed to save city preferences');
+      });
+    }, 500);
   }
 
   private setupRefreshTimer(): void {

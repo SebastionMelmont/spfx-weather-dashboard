@@ -24,7 +24,8 @@ export interface IWeatherDashboardWebPartProps {
 /**
  * Weather Dashboard SPFx Web Part.
  * Displays current weather for multiple cities with NZ formatting,
- * clothing recommendations, and UV index. Cities persist via localStorage.
+ * clothing recommendations, and UV index. Cities persist in a
+ * SharePoint list for cross-browser consistency.
  */
 export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeatherDashboardWebPartProps> {
   private _isDarkTheme: boolean = false;
@@ -37,7 +38,10 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
         defaultCity: this.properties.defaultCity,
         refreshInterval: this.properties.refreshInterval,
         httpClient: this.context.httpClient,
+        spHttpClient: this.context.spHttpClient,
+        siteUrl: this.context.pageContext.web.absoluteUrl,
         instanceId: this.context.instanceId,
+        userLoginName: this.context.pageContext.user.loginName,
         isDarkTheme: this._isDarkTheme,
       }
     );
