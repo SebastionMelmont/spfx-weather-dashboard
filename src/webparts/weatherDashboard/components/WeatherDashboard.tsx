@@ -1,6 +1,5 @@
 import * as React from 'react';
 import {
-  PrimaryButton,
   MessageBar,
   MessageBarType,
 } from '@fluentui/react';
@@ -8,7 +7,6 @@ import styles from './WeatherDashboard.module.scss';
 import type { IWeatherDashboardProps } from './IWeatherDashboardProps';
 import { ICityResult, ICityWeather } from '../models/IWeatherData';
 import { WeatherService } from '../services/WeatherService';
-import { ReportService } from '../services/ReportService';
 import { generateId } from '../helpers/formatHelper';
 import CitySearch from './CitySearch/CitySearch';
 import WeatherCard from './WeatherCard/WeatherCard';
@@ -17,37 +15,30 @@ interface IWeatherDashboardState {
   cities: ICityWeather[];
   message: string | undefined;
   messageType: MessageBarType;
-  isSavingReport: boolean;
 }
 
 /**
  * Main Weather Dashboard component.
- * Manages multiple city weather cards with search, refresh, and report saving.
+ * Manages multiple city weather cards with search, refresh, and persistence.
  */
 export default class WeatherDashboard extends React.Component<IWeatherDashboardProps, IWeatherDashboardState> {
   private weatherService: WeatherService;
-  private reportService: ReportService;
   private refreshTimer: ReturnType<typeof setInterval> | undefined = undefined;
 
   constructor(props: IWeatherDashboardProps) {
     super(props);
 
     this.weatherService = new WeatherService(props.httpClient);
-    this.reportService = new ReportService(props.spHttpClient, props.siteUrl, props.siteServerRelativeUrl);
 
     this.state = {
       cities: [],
       message: undefined,
       messageType: MessageBarType.info,
-      isSavingReport: false,
     };
   }
 
   public componentDidMount(): void {
-    // Restore saved cities, or fall back to default city
     this.loadSavedCities().catch(() => { /* handled internally */ });
-
-    // Set up auto-refresh
     this.setupRefreshTimer();
   }
 
@@ -65,20 +56,12 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
 
   public render(): React.ReactElement<IWeatherDashboardProps> {
     const { title } = this.props;
-    const { cities, message, messageType, isSavingReport } = this.state;
+    const { cities, message, messageType } = this.state;
 
     return (
       <div className={styles.weatherDashboard}>
         <div className={styles.header}>
           <h2 className={styles.title}>{title || 'Weather Dashboard'}</h2>
-          {cities.length > 0 && (
-            <PrimaryButton
-              text={isSavingReport ? 'Saving...' : 'Save Report'}
-              iconProps={{ iconName: 'Save' }}
-              onClick={this.onSaveReport}
-              disabled={isSavingReport}
-            />
-          )}
         </div>
 
         {message && (
@@ -120,9 +103,8 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     try {
       const saved: ICityResult[] = JSON.parse(this.props.savedCities || '[]');
       if (saved.length > 0) {
-        // Restore each saved city and fetch its weather
         for (const city of saved) {
-          await this.addCity(city, false); // don't persist during restore
+          await this.addCity(city, false);
         }
         return;
       }
@@ -130,12 +112,11 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
       // Invalid JSON, fall through to default
     }
 
-    // No saved cities — load the default
     if (this.props.defaultCity) {
       try {
         const results = await this.weatherService.searchCities(this.props.defaultCity, 1);
         if (results.length > 0) {
-          await this.addCity(results[0]);
+          await this.addCity(results[0], true);
         }
       } catch (error) {
         console.error('Failed to load default city:', error);
@@ -144,7 +125,6 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   }
 
   private onCitySelected = async (city: ICityResult): Promise<void> => {
-    // Check for duplicate
     const exists = this.state.cities.some(
       (c) => c.city.latitude === city.latitude && c.city.longitude === city.longitude
     );
@@ -154,29 +134,32 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
       return;
     }
 
-    await this.addCity(city);
+    await this.addCity(city, true);
   };
 
-  private async addCity(city: ICityResult, persist: boolean = true): Promise<void> {
-    const id = generateId();
-    const newEntry: ICityWeather = {
-      id,
-      city,
-      weather: undefined,
-      isLoading: true,
-      error: undefined,
-      lastUpdated: undefined,
-    };
+  private addCity(city: ICityResult, persist: boolean): Promise<void> {
+    return new Promise((resolve) => {
+      const id = generateId();
+      const newEntry: ICityWeather = {
+        id,
+        city,
+        weather: undefined,
+        isLoading: true,
+        error: undefined,
+        lastUpdated: undefined,
+      };
 
-    this.setState(
-      (prev) => ({ cities: [...prev.cities, newEntry] }),
-      () => {
-        this.fetchWeatherForCity(id).catch(() => { /* handled internally */ });
-        if (persist) {
-          this.persistCities();
+      this.setState(
+        (prev) => ({ cities: [...prev.cities, newEntry] }),
+        () => {
+          this.fetchWeatherForCity(id).catch(() => { /* handled internally */ });
+          if (persist) {
+            this.persistCities();
+          }
+          resolve();
         }
-      }
-    );
+      );
+    });
   }
 
   private async fetchWeatherForCity(id: string): Promise<void> {
@@ -211,34 +194,13 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
 
   private onRemoveCity = (id: string): void => {
     this.setState(
-      (prev) => ({
-        cities: prev.cities.filter((c) => c.id !== id),
-      }),
+      (prev) => ({ cities: prev.cities.filter((c) => c.id !== id) }),
       () => this.persistCities()
     );
   };
 
   private onRefreshCity = (id: string): void => {
     this.fetchWeatherForCity(id).catch(() => { /* handled internally */ });
-  };
-
-  private onSaveReport = async (): Promise<void> => {
-    this.setState({ isSavingReport: true });
-
-    try {
-      const fileUrl = await this.reportService.saveReport(
-        this.state.cities,
-        this.props.reportLibrary
-      );
-      this.showMessage(`Report saved: ${fileUrl}`, MessageBarType.success);
-    } catch (error) {
-      this.showMessage(
-        error instanceof Error ? error.message : 'Failed to save report',
-        MessageBarType.error
-      );
-    } finally {
-      this.setState({ isSavingReport: false });
-    }
   };
 
   private showMessage(message: string, messageType: MessageBarType): void {

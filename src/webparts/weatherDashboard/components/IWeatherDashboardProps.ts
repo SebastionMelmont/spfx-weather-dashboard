@@ -1,4 +1,4 @@
-import { HttpClient, SPHttpClient } from '@microsoft/sp-http';
+import { HttpClient } from '@microsoft/sp-http';
 import { ICityResult } from '../models/IWeatherData';
 
 export interface IWeatherDashboardProps {
@@ -8,19 +8,11 @@ export interface IWeatherDashboardProps {
   defaultCity: string;
   /** Auto-refresh interval in minutes (0 = disabled) */
   refreshInterval: number;
-  /** SharePoint document library name for saving reports */
-  reportLibrary: string;
   /** SPFx HttpClient for external API calls */
   httpClient: HttpClient;
-  /** SPFx SPHttpClient for SharePoint API calls */
-  spHttpClient: SPHttpClient;
-  /** Current SharePoint site absolute URL */
-  siteUrl: string;
-  /** Server-relative URL of the site (e.g., /sites/TravelHub) */
-  siteServerRelativeUrl: string;
   /** Callback to persist saved cities to web part properties */
   onCitiesChanged: (cities: ICityResult[]) => void;
-  /** Previously saved cities to restore on load */
+  /** Previously saved cities JSON string */
   savedCities: string;
   /** Whether the current theme is dark */
   isDarkTheme: boolean;

@@ -20,8 +20,6 @@ export interface IWeatherDashboardWebPartProps {
   defaultCity: string;
   /** Auto-refresh interval in minutes (0 = disabled) */
   refreshInterval: number;
-  /** SharePoint document library name for saving reports */
-  reportLibrary: string;
   /** JSON-serialized array of saved cities */
   savedCities: string;
 }
@@ -29,7 +27,7 @@ export interface IWeatherDashboardWebPartProps {
 /**
  * Weather Dashboard SPFx Web Part.
  * Displays current weather for multiple cities with NZ formatting,
- * clothing recommendations, UV index, and report saving to SharePoint.
+ * clothing recommendations, and UV index.
  */
 export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeatherDashboardWebPartProps> {
   private _isDarkTheme: boolean = false;
@@ -41,11 +39,7 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
         title: this.properties.title,
         defaultCity: this.properties.defaultCity,
         refreshInterval: this.properties.refreshInterval,
-        reportLibrary: this.properties.reportLibrary,
         httpClient: this.context.httpClient,
-        spHttpClient: this.context.spHttpClient,
-        siteUrl: this.context.pageContext.web.absoluteUrl,
-        siteServerRelativeUrl: this.context.pageContext.web.serverRelativeUrl,
         savedCities: this.properties.savedCities || '[]',
         onCitiesChanged: this.onCitiesChanged,
         isDarkTheme: this._isDarkTheme,
@@ -56,7 +50,6 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
   }
 
   protected onInit(): Promise<void> {
-    // Set defaults if not configured
     if (!this.properties.title) {
       this.properties.title = 'Weather Dashboard';
     }
@@ -66,8 +59,8 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
     if (this.properties.refreshInterval === undefined) {
       this.properties.refreshInterval = 15;
     }
-    if (!this.properties.reportLibrary) {
-      this.properties.reportLibrary = 'Weather Reports';
+    if (!this.properties.savedCities) {
+      this.properties.savedCities = '[]';
     }
 
     return Promise.resolve();
@@ -121,14 +114,9 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
                 }),
                 PropertyPaneTextField('defaultCity', {
                   label: 'Default City',
-                  description: 'City loaded when the web part first appears.',
+                  description: 'City loaded when no saved cities exist.',
                   value: this.properties.defaultCity,
                 }),
-              ],
-            },
-            {
-              groupName: 'Refresh & Reports',
-              groupFields: [
                 PropertyPaneSlider('refreshInterval', {
                   label: 'Auto-refresh (minutes)',
                   min: 0,
@@ -136,11 +124,6 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
                   step: 5,
                   showValue: true,
                   value: this.properties.refreshInterval,
-                }),
-                PropertyPaneTextField('reportLibrary', {
-                  label: 'Report Library Name',
-                  description: 'SharePoint document library for saving weather reports.',
-                  value: this.properties.reportLibrary,
                 }),
               ],
             },
