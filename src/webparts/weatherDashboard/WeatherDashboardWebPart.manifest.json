@@ -1,0 +1,24 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "dfc3f348-d617-4020-be53-fcbbebb10c74",
+  "alias": "WeatherDashboardWebPart",
+  "componentType": "WebPart",
+  "version": "*",
+  "manifestVersion": 2,
+  "requiresCustomScript": false,
+  "supportedHosts": ["SharePointWebPart", "TeamsPersonalApp", "TeamsTab", "SharePointFullPage"],
+  "supportsThemeVariants": true,
+  "preconfiguredEntries": [{
+    "groupId": "5c03119e-3074-46fd-976b-c60198311f70",
+    "group": { "default": "Under Development" },
+    "title": { "default": "Weather Dashboard" },
+    "description": { "default": "Multi-city weather dashboard with NZ formatting, UV index, and clothing recommendations." },
+    "officeFabricIconFontName": "Sunny",
+    "properties": {
+      "title": "Weather Dashboard",
+      "defaultCity": "Auckland",
+      "refreshInterval": 15,
+      "reportLibrary": "Weather Reports"
+    }
+  }]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "weather-dashboard-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/weatherDashboard/WeatherDashboardWebPart.js",
+          "manifest": "./src/webparts/weatherDashboard/WeatherDashboardWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "WeatherDashboardWebPartStrings": "lib/webparts/weatherDashboard/loc/{locale}.js"
+  }
+}

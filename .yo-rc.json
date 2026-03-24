@@ -1,0 +1,22 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "whichFolder": "subdir",
+    "solutionName": "spfx-weather-dashboard",
+    "useGulp": false,
+    "componentType": "webpart",
+    "template": "react",
+    "componentName": "WeatherDashboard",
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.14.0",
+    "sdksVersions": {},
+    "version": "1.22.2",
+    "libraryName": "spfx-weather-dashboard",
+    "libraryId": "137489b8-a28c-49bc-a3b4-df98c3766969",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionShortDescription": "spfx-weather-dashboard description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false
+  }
+}

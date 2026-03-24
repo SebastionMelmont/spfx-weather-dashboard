@@ -1,0 +1,42 @@
+@import '~@fluentui/react/dist/sass/References.scss';
+
+.weatherDashboard {
+  padding: 16px;
+  color: "[theme:bodyText, default: #323130]";
+  color: var(--bodyText, #323130);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: "[theme:bodyText, default: #323130]";
+  color: var(--bodyText, #323130);
+}
+
+.emptyState {
+  padding: 48px 24px;
+  text-align: center;
+  color: "[theme:bodySubtext, default: #605e5c]";
+  color: var(--bodySubtext, #605e5c);
+  font-size: 14px;
+  border: 2px dashed "[theme:neutralLight, default: #edebe9]";
+  border: 2px dashed var(--neutralLight, #edebe9);
+  border-radius: 8px;
+}
+
+.cardGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+}

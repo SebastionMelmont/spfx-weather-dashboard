@@ -1,0 +1,149 @@
+@import '~@fluentui/react/dist/sass/References.scss';
+
+.weatherCard {
+  background: "[theme:bodyBackground, default: #ffffff]";
+  background: var(--bodyBackground, #ffffff);
+  border: 1px solid "[theme:neutralLight, default: #edebe9]";
+  border: 1px solid var(--neutralLight, #edebe9);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.2s ease;
+  min-width: 260px;
+  max-width: 320px;
+  flex: 1 1 280px;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.cityName {
+  h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: "[theme:bodyText, default: #323130]";
+    color: var(--bodyText, #323130);
+  }
+}
+
+.country {
+  font-size: 12px;
+  color: "[theme:bodySubtext, default: #605e5c]";
+  color: var(--bodySubtext, #605e5c);
+}
+
+.actions {
+  display: flex;
+  gap: 2px;
+}
+
+.loading {
+  padding: 24px 0;
+  text-align: center;
+  color: "[theme:bodySubtext, default: #605e5c]";
+  color: var(--bodySubtext, #605e5c);
+  font-style: italic;
+}
+
+.error {
+  padding: 12px;
+  background: #fde7e9;
+  border-radius: 4px;
+  color: #a80000;
+  font-size: 13px;
+}
+
+.weatherBody {
+  text-align: center;
+}
+
+.mainTemp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.icon {
+  font-size: 36px;
+}
+
+.temperature {
+  font-size: 36px;
+  font-weight: 700;
+  color: "[theme:bodyText, default: #323130]";
+  color: var(--bodyText, #323130);
+}
+
+.condition {
+  font-size: 14px;
+  color: "[theme:bodySubtext, default: #605e5c]";
+  color: var(--bodySubtext, #605e5c);
+  margin-bottom: 16px;
+}
+
+.details {
+  text-align: left;
+  border-top: 1px solid "[theme:neutralLighter, default: #f3f2f1]";
+  border-top: 1px solid var(--neutralLighter, #f3f2f1);
+  padding-top: 12px;
+}
+
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.label {
+  color: "[theme:bodySubtext, default: #605e5c]";
+  color: var(--bodySubtext, #605e5c);
+}
+
+.value {
+  font-weight: 600;
+  color: "[theme:bodyText, default: #323130]";
+  color: var(--bodyText, #323130);
+}
+
+.uvLow {
+  color: #107c10;
+}
+
+.uvModerate {
+  color: #ca5010;
+}
+
+.uvHigh {
+  color: #d83b01;
+}
+
+.uvVeryHigh {
+  color: #a80000;
+}
+
+.uvExtreme {
+  color: #5c2d91;
+}
+
+.updated {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid "[theme:neutralLighter, default: #f3f2f1]";
+  border-top: 1px solid var(--neutralLighter, #f3f2f1);
+  font-size: 11px;
+  color: "[theme:bodySubtext, default: #605e5c]";
+  color: var(--bodySubtext, #605e5c);
+  text-align: center;
+}

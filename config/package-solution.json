@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "spfx-weather-dashboard-client-side-solution",
+    "id": "137489b8-a28c-49bc-a3b4-df98c3766969",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.22.2"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "spfx-weather-dashboard description"
+      },
+      "longDescription": {
+        "default": "spfx-weather-dashboard description"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "spfx-weather-dashboard Feature",
+        "description": "The feature that activates elements of the spfx-weather-dashboard solution.",
+        "id": "2784f7f5-1b65-4e39-bf0b-f3ed29f31852",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/spfx-weather-dashboard.sppkg"
+  }
+}
