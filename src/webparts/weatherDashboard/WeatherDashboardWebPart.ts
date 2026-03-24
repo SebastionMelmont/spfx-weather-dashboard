@@ -11,7 +11,6 @@ import { IReadonlyTheme } from '@microsoft/sp-component-base';
 
 import WeatherDashboard from './components/WeatherDashboard';
 import { IWeatherDashboardProps } from './components/IWeatherDashboardProps';
-import { ICityResult } from './models/IWeatherData';
 
 export interface IWeatherDashboardWebPartProps {
   /** Title displayed above the dashboard */
@@ -20,14 +19,12 @@ export interface IWeatherDashboardWebPartProps {
   defaultCity: string;
   /** Auto-refresh interval in minutes (0 = disabled) */
   refreshInterval: number;
-  /** JSON-serialized array of saved cities */
-  savedCities: string;
 }
 
 /**
  * Weather Dashboard SPFx Web Part.
  * Displays current weather for multiple cities with NZ formatting,
- * clothing recommendations, and UV index.
+ * clothing recommendations, and UV index. Cities persist via localStorage.
  */
 export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeatherDashboardWebPartProps> {
   private _isDarkTheme: boolean = false;
@@ -40,8 +37,7 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
         defaultCity: this.properties.defaultCity,
         refreshInterval: this.properties.refreshInterval,
         httpClient: this.context.httpClient,
-        savedCities: this.properties.savedCities || '[]',
-        onCitiesChanged: this.onCitiesChanged,
+        instanceId: this.context.instanceId,
         isDarkTheme: this._isDarkTheme,
       }
     );
@@ -59,16 +55,9 @@ export default class WeatherDashboardWebPart extends BaseClientSideWebPart<IWeat
     if (this.properties.refreshInterval === undefined) {
       this.properties.refreshInterval = 15;
     }
-    if (!this.properties.savedCities) {
-      this.properties.savedCities = '[]';
-    }
 
     return Promise.resolve();
   }
-
-  private onCitiesChanged = (cities: ICityResult[]): void => {
-    this.properties.savedCities = JSON.stringify(cities);
-  };
 
   protected onThemeChanged(currentTheme: IReadonlyTheme | undefined): void {
     if (!currentTheme) {

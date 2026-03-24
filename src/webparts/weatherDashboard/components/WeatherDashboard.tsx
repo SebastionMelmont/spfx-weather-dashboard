@@ -19,16 +19,18 @@ interface IWeatherDashboardState {
 
 /**
  * Main Weather Dashboard component.
- * Manages multiple city weather cards with search, refresh, and persistence.
+ * Manages multiple city weather cards with search, refresh, and localStorage persistence.
  */
 export default class WeatherDashboard extends React.Component<IWeatherDashboardProps, IWeatherDashboardState> {
   private weatherService: WeatherService;
   private refreshTimer: ReturnType<typeof setInterval> | undefined = undefined;
+  private storageKey: string;
 
   constructor(props: IWeatherDashboardProps) {
     super(props);
 
     this.weatherService = new WeatherService(props.httpClient);
+    this.storageKey = `weatherDashboard_cities_${props.instanceId}`;
 
     this.state = {
       cities: [],
@@ -100,18 +102,23 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   }
 
   private async loadSavedCities(): Promise<void> {
+    // Try loading from localStorage
     try {
-      const saved: ICityResult[] = JSON.parse(this.props.savedCities || '[]');
-      if (saved.length > 0) {
-        for (const city of saved) {
-          await this.addCity(city, false);
+      const stored = localStorage.getItem(this.storageKey);
+      if (stored) {
+        const saved: ICityResult[] = JSON.parse(stored);
+        if (Array.isArray(saved) && saved.length > 0) {
+          for (const city of saved) {
+            await this.addCity(city, false);
+          }
+          return;
         }
-        return;
       }
     } catch {
-      // Invalid JSON, fall through to default
+      // Invalid data, fall through to default
     }
 
+    // No saved cities — load the default
     if (this.props.defaultCity) {
       try {
         const results = await this.weatherService.searchCities(this.props.defaultCity, 1);
@@ -154,7 +161,7 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
         () => {
           this.fetchWeatherForCity(id).catch(() => { /* handled internally */ });
           if (persist) {
-            this.persistCities();
+            this.saveCitiesToStorage();
           }
           resolve();
         }
@@ -195,7 +202,7 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
   private onRemoveCity = (id: string): void => {
     this.setState(
       (prev) => ({ cities: prev.cities.filter((c) => c.id !== id) }),
-      () => this.persistCities()
+      () => this.saveCitiesToStorage()
     );
   };
 
@@ -211,9 +218,14 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     this.setState({ message: undefined });
   };
 
-  private persistCities(): void {
-    const cityData = this.state.cities.map((c) => c.city);
-    this.props.onCitiesChanged(cityData);
+  private saveCitiesToStorage(): void {
+    try {
+      const cityData = this.state.cities.map((c) => c.city);
+      localStorage.setItem(this.storageKey, JSON.stringify(cityData));
+    } catch {
+      // localStorage might be full or unavailable
+      console.error('Failed to save cities to localStorage');
+    }
   }
 
   private setupRefreshTimer(): void {

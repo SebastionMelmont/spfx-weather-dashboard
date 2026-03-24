@@ -17,8 +17,7 @@
     "properties": {
       "title": "Weather Dashboard",
       "defaultCity": "Auckland",
-      "refreshInterval": 15,
-      "savedCities": "[]"
+      "refreshInterval": 15
     }
   }]
 }
