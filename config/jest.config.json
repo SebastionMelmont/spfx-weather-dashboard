@@ -1,0 +1,8 @@
+{
+  "extends": "@microsoft/spfx-web-build-rig/profiles/default/config/jest.config.json",
+
+  "moduleNameMapper": {
+    "@microsoft/sp-http": "<rootDir>/lib-commonjs/webparts/weatherDashboard/tests/__mocks__/sphttp.js",
+    "@microsoft/sp-core-library": "<rootDir>/lib-commonjs/webparts/weatherDashboard/tests/__mocks__/sphttp.js"
+  }
+}
