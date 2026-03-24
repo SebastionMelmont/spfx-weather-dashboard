@@ -1,7 +1,7 @@
 import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 import { ICityResult } from '../models/IWeatherData';
 
-const LIST_TITLE = 'WeatherDashboardPrefs';
+const LIST_TITLE = 'WDCityPreferences';
 
 /**
  * Service for persisting user weather city preferences in a SharePoint list.
