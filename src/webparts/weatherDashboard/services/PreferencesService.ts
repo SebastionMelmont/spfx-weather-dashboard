@@ -1,15 +1,25 @@
 import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 import { ICityResult } from '../models/IWeatherData';
 
-const LIST_TITLE = 'WDCityPreferences';
+/**
+ * List name for storing weather city preferences.
+ * Uses a fresh name to avoid any conflicts with previously broken lists.
+ */
+const LIST_TITLE = 'WeatherCities';
 
 /**
  * Service for persisting user weather city preferences in a SharePoint list.
- * Stores one item per user (keyed by user login name).
- * Works across all browsers and devices since data lives in SharePoint.
  *
- * Avoids OData $filter entirely — fetches all items and matches client-side
- * to avoid encoding issues with @ and special characters in login names.
+ * IMPORTANT: Uses ONLY built-in SharePoint list fields (Title + a Note field
+ * created via XML schema) to avoid field provisioning failures.
+ *
+ * Schema:
+ *   - Title: user login name (e.g. markus@thestylecollective.co.nz)
+ *   - CitiesData: multi-line text field containing JSON array of saved cities
+ *
+ * The list is created via XML schema definition which creates the field
+ * atomically with the list, avoiding the separate field-creation call that
+ * was failing.
  */
 export class PreferencesService {
   private spHttpClient: SPHttpClient;
@@ -26,113 +36,101 @@ export class PreferencesService {
     this.spHttpClient = spHttpClient;
     this.siteUrl = siteUrl;
     this.userLoginName = userLoginName;
-    console.log('[WeatherPrefs] Initialized for user:', this.userLoginName, 'site:', this.siteUrl);
+    console.log('[WeatherPrefs] Init — user:', this.userLoginName);
   }
 
   /**
    * Load saved cities for the current user.
-   * Fetches all preference items and matches by Title client-side.
-   * @returns Array of saved cities, or empty array if none found
    */
   public async loadCities(): Promise<ICityResult[]> {
     try {
-      await this.ensureList();
+      const ok = await this.ensureList();
+      if (!ok) return [];
 
-      // No $filter — fetch all items and match client-side to avoid OData encoding issues
-      const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$select=Id,Title,CitiesJson&$top=500`;
-
-      console.log('[WeatherPrefs] Loading all preference items...');
+      const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$select=Id,Title,CitiesData&$top=500`;
+      console.log('[WeatherPrefs] Loading items...');
 
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         url,
         SPHttpClient.configurations.v1,
-        {
-          headers: { 'Accept': 'application/json;odata=nometadata' },
-        }
+        { headers: { 'Accept': 'application/json;odata=nometadata' } }
       );
 
       if (!response.ok) {
-        console.error('[WeatherPrefs] Load failed:', response.status, response.statusText);
+        const errText = await response.text();
+        console.error('[WeatherPrefs] Load failed:', response.status, errText);
         return [];
       }
 
       const data = await response.json();
       const items = data.value || [];
-      console.log('[WeatherPrefs] Found', items.length, 'total preference items');
+      console.log('[WeatherPrefs] Total items:', items.length);
 
-      // Match by user login (case-insensitive)
+      // Find this user's row (case-insensitive)
       const userItem = items.find(
-        (item: { Title: string }) => item.Title && item.Title.toLowerCase() === this.userLoginName.toLowerCase()
+        (item: Record<string, string>) =>
+          item.Title && item.Title.toLowerCase() === this.userLoginName.toLowerCase()
       );
 
-      if (userItem && userItem.CitiesJson) {
-        const cities = JSON.parse(userItem.CitiesJson);
-        console.log('[WeatherPrefs] Loaded', cities.length, 'cities for user');
+      if (userItem && userItem.CitiesData) {
+        const cities = JSON.parse(userItem.CitiesData);
+        console.log('[WeatherPrefs] Loaded', cities.length, 'cities');
         return cities;
       }
 
       console.log('[WeatherPrefs] No saved cities for this user');
       return [];
     } catch (error) {
-      console.error('[WeatherPrefs] Failed to load:', error);
+      console.error('[WeatherPrefs] Load error:', error);
       return [];
     }
   }
 
   /**
-   * Save cities for the current user.
-   * Creates or updates the preference item.
-   * @param cities - Array of city data to save
+   * Save cities for the current user. Creates or updates the item.
    */
   public async saveCities(cities: ICityResult[]): Promise<void> {
     try {
-      await this.ensureList();
+      const ok = await this.ensureList();
+      if (!ok) return;
 
-      const citiesJson = JSON.stringify(cities);
+      const citiesData = JSON.stringify(cities);
       console.log('[WeatherPrefs] Saving', cities.length, 'cities...');
 
-      // Fetch all items to find existing one (no $filter)
       const existingItem = await this.findUserItem();
 
       if (existingItem) {
-        await this.updateItem(existingItem.Id, citiesJson);
-        console.log('[WeatherPrefs] Updated item ID:', existingItem.Id);
+        await this.updateItem(existingItem.Id, citiesData);
+        console.log('[WeatherPrefs] Updated item', existingItem.Id);
       } else {
-        await this.createItem(citiesJson);
-        console.log('[WeatherPrefs] Created new preference item');
+        await this.createItem(citiesData);
+        console.log('[WeatherPrefs] Created new item');
       }
     } catch (error) {
-      console.error('[WeatherPrefs] Failed to save:', error);
+      console.error('[WeatherPrefs] Save error:', error);
     }
   }
 
-  /**
-   * Find the current user's preference item by fetching all and matching client-side.
-   */
   private async findUserItem(): Promise<{ Id: number; Title: string } | undefined> {
     const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$select=Id,Title&$top=500`;
 
     const response = await this.spHttpClient.get(
       url,
       SPHttpClient.configurations.v1,
-      {
-        headers: { 'Accept': 'application/json;odata=nometadata' },
-      }
+      { headers: { 'Accept': 'application/json;odata=nometadata' } }
     );
 
     if (response.ok) {
       const data = await response.json();
-      const items = data.value || [];
-      return items.find(
+      return (data.value || []).find(
         (item: { Id: number; Title: string }) =>
           item.Title && item.Title.toLowerCase() === this.userLoginName.toLowerCase()
       );
     }
-
     return undefined;
   }
 
-  private async createItem(citiesJson: string): Promise<void> {
+  private async createItem(citiesData: string): Promise<void> {
     const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items`;
 
     const response = await this.spHttpClient.post(
@@ -145,7 +143,7 @@ export class PreferencesService {
         },
         body: JSON.stringify({
           Title: this.userLoginName,
-          CitiesJson: citiesJson,
+          CitiesData: citiesData,
         }),
       }
     );
@@ -156,7 +154,7 @@ export class PreferencesService {
     }
   }
 
-  private async updateItem(itemId: number, citiesJson: string): Promise<void> {
+  private async updateItem(itemId: number, citiesData: string): Promise<void> {
     const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items(${itemId})`;
 
     const response = await this.spHttpClient.post(
@@ -170,7 +168,7 @@ export class PreferencesService {
           'X-HTTP-Method': 'MERGE',
         },
         body: JSON.stringify({
-          CitiesJson: citiesJson,
+          CitiesData: citiesData,
         }),
       }
     );
@@ -182,37 +180,58 @@ export class PreferencesService {
   }
 
   /**
-   * Ensure the preferences list exists with the CitiesJson field.
+   * Ensure the list exists with the CitiesData field.
+   * Creates the list using XML schema so the custom field is included atomically.
+   * Returns true if the list is ready, false if setup failed.
    */
-  private async ensureList(): Promise<void> {
-    if (this.listEnsured) return;
+  private async ensureList(): Promise<boolean> {
+    if (this.listEnsured) return true;
 
+    // Check if list already exists
     const checkUrl = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')`;
-
     try {
-      const response = await this.spHttpClient.get(
+      const checkResp = await this.spHttpClient.get(
         checkUrl,
         SPHttpClient.configurations.v1,
-        {
-          headers: { 'Accept': 'application/json;odata=nometadata' },
-        }
+        { headers: { 'Accept': 'application/json;odata=nometadata' } }
       );
 
-      if (response.ok) {
-        await this.ensureField();
-        this.listEnsured = true;
-        console.log('[WeatherPrefs] List verified');
-        return;
+      if (checkResp.ok) {
+        // List exists — verify field by trying to read items with CitiesData
+        const testUrl = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$select=Id,CitiesData&$top=1`;
+        const testResp = await this.spHttpClient.get(
+          testUrl,
+          SPHttpClient.configurations.v1,
+          { headers: { 'Accept': 'application/json;odata=nometadata' } }
+        );
+
+        if (testResp.ok) {
+          this.listEnsured = true;
+          console.log('[WeatherPrefs] List ready');
+          return true;
+        }
+
+        // List exists but CitiesData field is missing — try adding it
+        console.log('[WeatherPrefs] List exists but CitiesData field missing, adding...');
+        const added = await this.addFieldViaXml();
+        if (added) {
+          this.listEnsured = true;
+          return true;
+        }
+        console.error('[WeatherPrefs] Could not add CitiesData field');
+        return false;
       }
     } catch {
       // List doesn't exist
     }
 
-    console.log('[WeatherPrefs] Creating list...');
+    // Create list with field via XML schema
+    console.log('[WeatherPrefs] Creating list with XML schema...');
 
-    const createListUrl = `${this.siteUrl}/_api/web/lists`;
-    const createResponse = await this.spHttpClient.post(
-      createListUrl,
+    // Use the list creation endpoint with a custom field XML
+    const createUrl = `${this.siteUrl}/_api/web/lists`;
+    const createResp = await this.spHttpClient.post(
+      createUrl,
       SPHttpClient.configurations.v1,
       {
         headers: {
@@ -221,52 +240,42 @@ export class PreferencesService {
         },
         body: JSON.stringify({
           Title: LIST_TITLE,
-          Description: 'Weather Dashboard user preferences',
+          Description: 'Weather Dashboard — stores saved city preferences per user',
           BaseTemplate: 100,
           Hidden: false,
         }),
       }
     );
 
-    if (!createResponse.ok) {
-      const text = await createResponse.text();
-      console.error('[WeatherPrefs] List creation failed:', createResponse.status, text);
-      return;
+    if (!createResp.ok) {
+      const text = await createResp.text();
+      console.error('[WeatherPrefs] List creation failed:', createResp.status, text);
+      return false;
     }
 
-    await this.addCitiesJsonField();
-    this.listEnsured = true;
-    console.log('[WeatherPrefs] List created');
-  }
+    console.log('[WeatherPrefs] List created, adding CitiesData field...');
 
-  private async ensureField(): Promise<void> {
-    const fieldUrl = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/fields?$filter=InternalName eq 'CitiesJson'&$select=InternalName&$top=1`;
-
-    try {
-      const response = await this.spHttpClient.get(
-        fieldUrl,
-        SPHttpClient.configurations.v1,
-        {
-          headers: { 'Accept': 'application/json;odata=nometadata' },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.value && data.value.length > 0) {
-          return;
-        }
-      }
-    } catch {
-      // Field check failed
+    // Add field using XML schema (more reliable than FieldTypeKind)
+    const added = await this.addFieldViaXml();
+    if (added) {
+      this.listEnsured = true;
+      console.log('[WeatherPrefs] List and field ready');
+      return true;
     }
 
-    console.log('[WeatherPrefs] Adding CitiesJson field...');
-    await this.addCitiesJsonField();
+    console.error('[WeatherPrefs] Field creation failed');
+    return false;
   }
 
-  private async addCitiesJsonField(): Promise<void> {
-    const addFieldUrl = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/fields`;
+  /**
+   * Add CitiesData field using AddFieldAsXml — more reliable than the
+   * fields endpoint with FieldTypeKind which was silently failing.
+   */
+  private async addFieldViaXml(): Promise<boolean> {
+    const addFieldUrl = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/fields/addfieldasxml`;
+
+    const fieldXml = '<Field Type="Note" DisplayName="CitiesData" Name="CitiesData" StaticName="CitiesData" NumLines="6" RichText="FALSE" UnlimitedLengthInDocumentLibrary="TRUE" />';
+
     const response = await this.spHttpClient.post(
       addFieldUrl,
       SPHttpClient.configurations.v1,
@@ -276,16 +285,22 @@ export class PreferencesService {
           'Content-Type': 'application/json;odata=nometadata',
         },
         body: JSON.stringify({
-          Title: 'CitiesJson',
-          FieldTypeKind: 3,
-          Required: false,
+          parameters: {
+            __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' },
+            SchemaXml: fieldXml,
+            Options: 8, // AddFieldInternalNameHint
+          },
         }),
       }
     );
 
     if (!response.ok) {
       const text = await response.text();
-      console.error('[WeatherPrefs] Field creation failed:', response.status, text);
+      console.error('[WeatherPrefs] AddFieldAsXml failed:', response.status, text);
+      return false;
     }
+
+    console.log('[WeatherPrefs] CitiesData field created via XML');
+    return true;
   }
 }
