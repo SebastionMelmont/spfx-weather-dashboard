@@ -1,4 +1,4 @@
-import { getUVLabel, generateId } from '../helpers/formatHelper';
+import { getUVLabel, generateId, formatLocalTime, getDayName } from '../helpers/formatHelper';
 
 describe('getUVLabel', () => {
   it('returns Low for UV 0-2', () => {
@@ -51,5 +51,51 @@ describe('generateId', () => {
     }
     // All 100 should be unique
     expect(ids.size).toBe(100);
+  });
+});
+
+describe('formatLocalTime', () => {
+  it('returns a non-empty string for valid timezone', () => {
+    const time = formatLocalTime('Pacific/Auckland');
+    expect(time.length).toBeGreaterThan(0);
+  });
+
+  it('returns time in 12-hour format with am/pm', () => {
+    const time = formatLocalTime('Pacific/Auckland');
+    expect(time).toMatch(/\d{1,2}:\d{2}\s?(am|pm)/i);
+  });
+
+  it('returns empty string for invalid timezone', () => {
+    const time = formatLocalTime('Invalid/Timezone');
+    expect(time).toBe('');
+  });
+
+  it('works with different timezones', () => {
+    const nzTime = formatLocalTime('Pacific/Auckland');
+    const utcTime = formatLocalTime('UTC');
+    // Both should return valid time strings
+    expect(nzTime.length).toBeGreaterThan(0);
+    expect(utcTime.length).toBeGreaterThan(0);
+  });
+});
+
+describe('getDayName', () => {
+  it('returns a 3-letter day abbreviation', () => {
+    const day = getDayName('2026-03-24');
+    expect(day.length).toBeLessThanOrEqual(4); // "Tue" or "Tue."
+    expect(day.length).toBeGreaterThan(0);
+  });
+
+  it('returns correct day for known dates', () => {
+    // 24 March 2026 is a Tuesday
+    const day = getDayName('2026-03-24');
+    expect(day.toLowerCase()).toContain('tue');
+  });
+
+  it('handles different dates', () => {
+    const mon = getDayName('2026-03-23');
+    const wed = getDayName('2026-03-25');
+    expect(mon.toLowerCase()).toContain('mon');
+    expect(wed.toLowerCase()).toContain('wed');
   });
 });

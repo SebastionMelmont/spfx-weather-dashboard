@@ -136,17 +136,28 @@ describe('WeatherService', () => {
           relative_humidity_2m: 46,
           uv_index: 5.85,
         },
+        daily: {
+          time: ['2026-03-24', '2026-03-25', '2026-03-26', '2026-03-27', '2026-03-28', '2026-03-29'],
+          weather_code: [3, 2, 1, 0, 3, 2],
+          temperature_2m_max: [23, 24, 22, 21, 20, 19],
+          temperature_2m_min: [14, 15, 13, 12, 11, 10],
+          precipitation_probability_max: [10, 20, 0, 5, 30, 15],
+        },
       };
 
       const httpClient = createMockHttpClient(mockResponse);
       const service = new WeatherService(httpClient);
-      const weather = await service.fetchWeather(-36.8485, 174.7633);
+      const result = await service.fetchWeather(-36.8485, 174.7633);
 
-      expect(weather.temperature).toBe(22.3);
-      expect(weather.windSpeed).toBe(20.9);
-      expect(weather.weatherCode).toBe(3);
-      expect(weather.humidity).toBe(46);
-      expect(weather.uvIndex).toBe(5.85);
+      expect(result.current.temperature).toBe(22.3);
+      expect(result.current.windSpeed).toBe(20.9);
+      expect(result.current.weatherCode).toBe(3);
+      expect(result.current.humidity).toBe(46);
+      expect(result.current.uvIndex).toBe(5.85);
+      expect(result.current.temperatureHigh).toBe(23);
+      expect(result.current.temperatureLow).toBe(14);
+      expect(result.forecast).toHaveLength(5);
+      expect(result.forecast[0].date).toBe('2026-03-25');
     });
 
     it('passes coordinates in the API URL', async () => {
@@ -165,16 +176,28 @@ describe('WeatherService', () => {
       );
     });
 
-    it('requests NZ timezone and celsius units', async () => {
+    it('requests correct timezone and celsius units', async () => {
+      const mockResponse = { current: { temperature_2m: 20, wind_speed_10m: 10, weather_code: 0, relative_humidity_2m: 50, uv_index: 3 } };
+      const httpClient = createMockHttpClient(mockResponse);
+      const service = new WeatherService(httpClient);
+      await service.fetchWeather(0, 0, 'Pacific/Auckland');
+
+      const callUrl = (httpClient.get as jest.Mock).mock.calls[0][0] as string;
+      expect(callUrl).toContain('timezone=Pacific%2FAuckland');
+      expect(callUrl).toContain('temperature_unit=celsius');
+      expect(callUrl).toContain('wind_speed_unit=kmh');
+      expect(callUrl).toContain('daily=');
+      expect(callUrl).toContain('forecast_days=6');
+    });
+
+    it('uses auto timezone when none provided', async () => {
       const mockResponse = { current: { temperature_2m: 20, wind_speed_10m: 10, weather_code: 0, relative_humidity_2m: 50, uv_index: 3 } };
       const httpClient = createMockHttpClient(mockResponse);
       const service = new WeatherService(httpClient);
       await service.fetchWeather(0, 0);
 
       const callUrl = (httpClient.get as jest.Mock).mock.calls[0][0] as string;
-      expect(callUrl).toContain('timezone=Pacific/Auckland');
-      expect(callUrl).toContain('temperature_unit=celsius');
-      expect(callUrl).toContain('wind_speed_unit=kmh');
+      expect(callUrl).toContain('timezone=auto');
     });
 
     it('throws when API returns no current data', async () => {

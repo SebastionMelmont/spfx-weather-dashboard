@@ -1,8 +1,13 @@
 import { HttpClient, HttpClientResponse } from '@microsoft/sp-http';
-import { ICityResult, IWeatherData } from '../models/IWeatherData';
+import { ICityResult, IWeatherData, IDailyForecast } from '../models/IWeatherData';
 
 const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
+
+export interface IWeatherResponse {
+  current: IWeatherData;
+  forecast: IDailyForecast[];
+}
 
 /**
  * Service for fetching weather data from the Open-Meteo API.
@@ -51,6 +56,7 @@ export class WeatherService {
         longitude: r.longitude as number,
         country: r.country as string,
         admin1: (r.admin1 as string) || undefined,
+        timezone: (r.timezone as string) || undefined,
       }));
     } catch (error) {
       console.error('City search failed:', error);
@@ -59,20 +65,23 @@ export class WeatherService {
   }
 
   /**
-   * Fetch current weather for the given coordinates.
-   * Uses the Open-Meteo current= parameter for temp, wind, humidity, weather code, and UV.
+   * Fetch current weather and 5-day forecast for the given coordinates.
    * @param latitude - Latitude of the location
    * @param longitude - Longitude of the location
-   * @returns Current weather data
+   * @param timezone - IANA timezone for the location (default: auto)
+   * @returns Current weather data plus 5-day forecast
    */
-  public async fetchWeather(latitude: number, longitude: number): Promise<IWeatherData> {
+  public async fetchWeather(latitude: number, longitude: number, timezone?: string): Promise<IWeatherResponse> {
+    const tz = timezone || 'auto';
     const params = [
       `latitude=${latitude}`,
       `longitude=${longitude}`,
       'current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,uv_index',
-      'timezone=Pacific/Auckland',
+      'daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+      `timezone=${encodeURIComponent(tz)}`,
       'temperature_unit=celsius',
       'wind_speed_unit=kmh',
+      'forecast_days=6',
     ].join('&');
 
     const url = `${WEATHER_URL}?${params}`;
@@ -94,13 +103,37 @@ export class WeatherService {
       }
 
       const current = data.current;
-      return {
+
+      // Today's high/low from the daily data
+      const todayHigh = data.daily?.temperature_2m_max?.[0] ?? current.temperature_2m;
+      const todayLow = data.daily?.temperature_2m_min?.[0] ?? current.temperature_2m;
+
+      const weather: IWeatherData = {
         temperature: current.temperature_2m,
+        temperatureHigh: todayHigh,
+        temperatureLow: todayLow,
         windSpeed: current.wind_speed_10m,
         weatherCode: current.weather_code,
         humidity: current.relative_humidity_2m,
         uvIndex: current.uv_index,
       };
+
+      // Parse 5-day forecast (skip today = index 0, take indices 1-5)
+      const forecast: IDailyForecast[] = [];
+      if (data.daily?.time) {
+        const days = Math.min(data.daily.time.length, 6);
+        for (let i = 1; i < days; i++) {
+          forecast.push({
+            date: data.daily.time[i],
+            weatherCode: data.daily.weather_code[i],
+            temperatureHigh: data.daily.temperature_2m_max[i],
+            temperatureLow: data.daily.temperature_2m_min[i],
+            precipitationProbability: data.daily.precipitation_probability_max?.[i] ?? 0,
+          });
+        }
+      }
+
+      return { current: weather, forecast };
     } catch (error) {
       console.error('Weather fetch failed:', error);
       throw new Error('Failed to fetch weather data. Please try again.');

@@ -16,12 +16,13 @@ interface IWeatherDashboardState {
   cities: ICityWeather[];
   message: string | undefined;
   messageType: MessageBarType;
+  draggedId: string | undefined;
 }
 
 /**
  * Main Weather Dashboard component.
- * Manages multiple city weather cards with search, refresh, and
- * cross-browser persistence via a SharePoint list.
+ * Manages multiple city weather cards with search, refresh,
+ * drag-and-drop reorder, and cross-browser persistence.
  */
 export default class WeatherDashboard extends React.Component<IWeatherDashboardProps, IWeatherDashboardState> {
   private weatherService: WeatherService;
@@ -44,6 +45,7 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
       cities: [],
       message: undefined,
       messageType: MessageBarType.info,
+      draggedId: undefined,
     };
   }
 
@@ -104,6 +106,10 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
                 cityWeather={cityWeather}
                 onRemove={this.onRemoveCity}
                 onRefresh={this.onRefreshCity}
+                onDragStart={this.onDragStart}
+                onDragOver={this.onDragOver}
+                onDrop={this.onDrop}
+                onDragEnd={this.onDragEnd}
               />
             ))}
           </div>
@@ -112,8 +118,40 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     );
   }
 
+  // ─── Drag and Drop ──────────────────────────────────────
+  private onDragStart = (_e: React.DragEvent, id: string): void => {
+    this.setState({ draggedId: id });
+  };
+
+  private onDragOver = (e: React.DragEvent): void => {
+    e.preventDefault(); // required to allow drop
+  };
+
+  private onDrop = (_e: React.DragEvent, targetId: string): void => {
+    const { draggedId } = this.state;
+    if (!draggedId || draggedId === targetId) return;
+
+    this.setState((prev) => {
+      const cities = [...prev.cities];
+      const dragIndex = cities.findIndex((c) => c.id === draggedId);
+      const targetIndex = cities.findIndex((c) => c.id === targetId);
+
+      if (dragIndex === -1 || targetIndex === -1) return null;
+
+      // Remove dragged item and insert at target position
+      const [dragged] = cities.splice(dragIndex, 1);
+      cities.splice(targetIndex, 0, dragged);
+
+      return { cities, draggedId: undefined };
+    }, () => this.debouncedSave());
+  };
+
+  private onDragEnd = (): void => {
+    this.setState({ draggedId: undefined });
+  };
+
+  // ─── City Management ────────────────────────────────────
   private async loadSavedCities(): Promise<void> {
-    // Try loading from SharePoint preferences list
     try {
       const saved = await this.preferencesService.loadCities();
       if (saved.length > 0) {
@@ -126,7 +164,6 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
       // Fall through to default
     }
 
-    // No saved cities — load the default
     if (this.props.defaultCity) {
       try {
         const results = await this.weatherService.searchCities(this.props.defaultCity, 1);
@@ -159,6 +196,7 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
         id,
         city,
         weather: undefined,
+        forecast: undefined,
         isLoading: true,
         error: undefined,
         lastUpdated: undefined,
@@ -184,12 +222,14 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     this.updateCity(id, { isLoading: true, error: undefined });
 
     try {
-      const weather = await this.weatherService.fetchWeather(
+      const response = await this.weatherService.fetchWeather(
         entry.city.latitude,
-        entry.city.longitude
+        entry.city.longitude,
+        entry.city.timezone
       );
       this.updateCity(id, {
-        weather,
+        weather: response.current,
+        forecast: response.forecast,
         isLoading: false,
         lastUpdated: new Date(),
       });
@@ -226,10 +266,6 @@ export default class WeatherDashboard extends React.Component<IWeatherDashboardP
     this.setState({ message: undefined });
   };
 
-  /**
-   * Debounced save — waits 500ms after the last change before saving to SharePoint.
-   * Prevents rapid API calls when adding multiple cities quickly.
-   */
   private debouncedSave(): void {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
