@@ -1,21 +1,18 @@
-import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
+import { SPHttpClient } from '@microsoft/sp-http';
 import { ICityResult } from '../models/IWeatherData';
 
 /**
- * Uses an Announcements list (BaseTemplate 104) which has a built-in
- * multi-line "Body" field. NO custom field creation needed.
+ * Stores weather city preferences as a JSON file in SiteAssets.
+ * No lists, no custom fields, no content types — just a file.
  *
- * Schema (all built-in fields):
- *   Title = user login name
- *   Body  = JSON string of saved cities
+ * File: SiteAssets/weather-dashboard-prefs.json
+ * Format: { "users": { "user@email.com": [ ...cities ] } }
  */
-const LIST_TITLE = 'WeatherUserPrefs';
-
 export class PreferencesService {
   private spHttpClient: SPHttpClient;
   private siteUrl: string;
+  private siteRelativeUrl: string;
   private userLoginName: string;
-  private listReady: boolean = false;
 
   constructor(
     spHttpClient: SPHttpClient,
@@ -25,144 +22,110 @@ export class PreferencesService {
   ) {
     this.spHttpClient = spHttpClient;
     this.siteUrl = siteUrl;
-    this.userLoginName = userLoginName;
-    console.log('[WP] Init user:', userLoginName);
+    this.userLoginName = userLoginName.toLowerCase();
+
+    // Extract site-relative URL from absolute URL
+    // e.g., https://tenant.sharepoint.com/sites/SailRail → /sites/SailRail
+    const url = new URL(siteUrl);
+    this.siteRelativeUrl = url.pathname;
+
+    console.log('[WP] Init — user:', this.userLoginName, 'site:', this.siteRelativeUrl);
   }
 
+  private get filePath(): string {
+    return `${this.siteRelativeUrl}/SiteAssets/weather-dashboard-prefs.json`;
+  }
+
+  /**
+   * Load saved cities for the current user from the JSON file.
+   */
   public async loadCities(): Promise<ICityResult[]> {
     try {
-      if (!await this.ensureList()) return [];
-
-      const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$select=Id,Title,Body&$top=100`;
-      const resp = await this.get(url);
-      if (!resp) return [];
-
-      const data = await resp.json();
-      const items: Array<{ Id: number; Title: string; Body: string }> = data.value || [];
-      console.log('[WP] Items found:', items.length);
-
-      const mine = items.find(i => i.Title?.toLowerCase() === this.userLoginName.toLowerCase());
-      if (mine?.Body) {
-        const cities: ICityResult[] = JSON.parse(mine.Body);
-        console.log('[WP] Loaded', cities.length, 'cities');
-        return cities;
-      }
-      return [];
+      const allPrefs = await this.readPrefsFile();
+      const cities = allPrefs.users?.[this.userLoginName] || [];
+      console.log('[WP] Loaded', cities.length, 'cities');
+      return cities;
     } catch (e) {
-      console.error('[WP] Load error:', e);
+      console.log('[WP] No saved preferences yet');
       return [];
     }
   }
 
+  /**
+   * Save cities for the current user to the JSON file.
+   */
   public async saveCities(cities: ICityResult[]): Promise<void> {
     try {
-      if (!await this.ensureList()) return;
-
-      const body = JSON.stringify(cities);
       console.log('[WP] Saving', cities.length, 'cities...');
 
-      // Find existing item
-      const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items?$select=Id,Title&$top=100`;
-      const resp = await this.get(url);
-      if (!resp) return;
-
-      const data = await resp.json();
-      const items: Array<{ Id: number; Title: string }> = data.value || [];
-      const mine = items.find(i => i.Title?.toLowerCase() === this.userLoginName.toLowerCase());
-
-      if (mine) {
-        await this.patch(mine.Id, body);
-      } else {
-        await this.create(body);
+      // Read existing prefs (or start fresh)
+      let allPrefs: IPrefsFile;
+      try {
+        allPrefs = await this.readPrefsFile();
+      } catch {
+        allPrefs = { users: {} };
       }
+
+      // Update this user's cities
+      allPrefs.users[this.userLoginName] = cities;
+
+      // Write back
+      await this.writePrefsFile(allPrefs);
+      console.log('[WP] Saved successfully');
     } catch (e) {
-      console.error('[WP] Save error:', e);
+      console.error('[WP] Save failed:', e);
     }
   }
 
-  private async create(body: string): Promise<void> {
-    const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items`;
-    const resp = await this.spHttpClient.post(url, SPHttpClient.configurations.v1, {
-      headers: {
-        'Accept': 'application/json;odata=nometadata',
-        'Content-Type': 'application/json;odata=nometadata',
-      },
-      body: JSON.stringify({ Title: this.userLoginName, Body: body }),
-    });
-    if (resp.ok) {
-      console.log('[WP] Created item');
-    } else {
-      console.error('[WP] Create failed:', resp.status, await resp.text());
-    }
-  }
+  /**
+   * Read the prefs JSON file from SiteAssets.
+   */
+  private async readPrefsFile(): Promise<IPrefsFile> {
+    const fileUrl = `${this.siteUrl}/_api/web/GetFileByServerRelativeUrl('${this.filePath}')/$value`;
 
-  private async patch(id: number, body: string): Promise<void> {
-    const url = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')/items(${id})`;
-    const resp = await this.spHttpClient.post(url, SPHttpClient.configurations.v1, {
-      headers: {
-        'Accept': 'application/json;odata=nometadata',
-        'Content-Type': 'application/json;odata=nometadata',
-        'IF-MATCH': '*',
-        'X-HTTP-Method': 'MERGE',
-      },
-      body: JSON.stringify({ Body: body }),
-    });
-    if (resp.ok) {
-      console.log('[WP] Updated item', id);
-    } else {
-      console.error('[WP] Update failed:', resp.status, await resp.text());
-    }
-  }
+    const resp = await this.spHttpClient.get(
+      fileUrl,
+      SPHttpClient.configurations.v1,
+      { headers: { 'Accept': 'application/json' } }
+    );
 
-  private async get(url: string): Promise<SPHttpClientResponse | null> {
-    const resp = await this.spHttpClient.get(url, SPHttpClient.configurations.v1, {
-      headers: { 'Accept': 'application/json;odata=nometadata' },
-    });
     if (!resp.ok) {
-      console.error('[WP] GET failed:', resp.status, url);
-      return null;
+      throw new Error(`File read failed: ${resp.status}`);
     }
-    return resp;
+
+    const text = await resp.text();
+    return JSON.parse(text);
   }
 
-  private async ensureList(): Promise<boolean> {
-    if (this.listReady) return true;
+  /**
+   * Write the prefs JSON file to SiteAssets using the Files REST API.
+   */
+  private async writePrefsFile(prefs: IPrefsFile): Promise<void> {
+    const content = JSON.stringify(prefs, null, 2);
 
-    // Check if list exists
-    const checkUrl = `${this.siteUrl}/_api/web/lists/getbytitle('${LIST_TITLE}')`;
-    const checkResp = await this.spHttpClient.get(checkUrl, SPHttpClient.configurations.v1, {
-      headers: { 'Accept': 'application/json;odata=nometadata' },
-    });
+    // Use Files/add with overwrite=true
+    const uploadUrl = `${this.siteUrl}/_api/web/GetFolderByServerRelativeUrl('${this.siteRelativeUrl}/SiteAssets')/Files/add(url='weather-dashboard-prefs.json',overwrite=true)`;
 
-    if (checkResp.ok) {
-      this.listReady = true;
-      console.log('[WP] List exists');
-      return true;
+    const resp = await this.spHttpClient.post(
+      uploadUrl,
+      SPHttpClient.configurations.v1,
+      {
+        headers: {
+          'Accept': 'application/json;odata=nometadata',
+          'Content-Type': 'application/octet-stream',
+        },
+        body: content,
+      }
+    );
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('[WP] File write failed:', resp.status, errText);
+      throw new Error(`File write failed: ${resp.status}`);
     }
-
-    // Create as Announcements list (has built-in Body field)
-    console.log('[WP] Creating announcements list...');
-    const createUrl = `${this.siteUrl}/_api/web/lists`;
-    const createResp = await this.spHttpClient.post(createUrl, SPHttpClient.configurations.v1, {
-      headers: {
-        'Accept': 'application/json;odata=nometadata',
-        'Content-Type': 'application/json;odata=nometadata',
-      },
-      body: JSON.stringify({
-        Title: LIST_TITLE,
-        Description: 'Weather Dashboard city preferences',
-        BaseTemplate: 104,
-        Hidden: false,
-      }),
-    });
-
-    if (createResp.ok) {
-      this.listReady = true;
-      console.log('[WP] List created (Announcements template)');
-      return true;
-    }
-
-    console.error('[WP] List creation failed:', createResp.status, await createResp.text());
-    return false;
   }
+}
+
+interface IPrefsFile {
+  users: Record<string, ICityResult[]>;
 }
